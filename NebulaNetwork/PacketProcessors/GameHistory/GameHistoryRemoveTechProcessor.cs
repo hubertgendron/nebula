@@ -1,6 +1,6 @@
 ﻿using NebulaModel.Attributes;
 using NebulaModel.Logger;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.GameHistory;
 using NebulaWorld.GameDataHistory;
@@ -14,10 +14,10 @@ namespace NebulaNetwork.PacketProcessors.GameHistory
 
         public GameHistoryRemoveTechProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(GameHistoryRemoveTechPacket packet, NebulaConnection conn)
+        public override void ProcessPacket(GameHistoryRemoveTechPacket packet, NetworkConnection conn)
         {
             bool valid = true;
             if (IsHost)

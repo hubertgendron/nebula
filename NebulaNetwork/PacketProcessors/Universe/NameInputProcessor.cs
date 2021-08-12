@@ -1,5 +1,5 @@
 ﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Universe;
 using NebulaWorld;
@@ -17,10 +17,10 @@ namespace NebulaNetwork.PacketProcessors.Universe
 
         public NameInputProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(NameInputPacket packet, NebulaConnection conn)
+        public override void ProcessPacket(NameInputPacket packet, NetworkConnection conn)
         {
             bool valid = true;
             if (IsHost)

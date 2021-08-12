@@ -1,6 +1,6 @@
 ﻿using NebulaModel.Attributes;
 using NebulaModel.Logger;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Session;
 using NebulaModel.Packets.Universe;
@@ -19,7 +19,7 @@ namespace NebulaNetwork.PacketProcessors.Session
             playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(SyncComplete packet, NebulaConnection conn)
+        public override void ProcessPacket(SyncComplete packet, NetworkConnection conn)
         {
             if (IsHost)
             {

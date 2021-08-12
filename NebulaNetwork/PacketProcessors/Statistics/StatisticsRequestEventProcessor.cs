@@ -1,8 +1,9 @@
 ﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Statistics;
 using NebulaWorld.Statistics;
+using NebulaModel.Networking;
 
 namespace NebulaNetwork.PacketProcessors.Statistics
 {
@@ -13,10 +14,10 @@ namespace NebulaNetwork.PacketProcessors.Statistics
 
         public StatisticsRequestEventProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(StatisticsRequestEvent packet, NebulaConnection conn)
+        public override void ProcessPacket(StatisticsRequestEvent packet, NetworkConnection conn)
         {
             if (IsClient) return;
 
@@ -25,7 +26,7 @@ namespace NebulaNetwork.PacketProcessors.Statistics
             {
                 if (packet.Event == StatisticEvent.WindowOpened)
                 {
-                    StatisticsManager.instance.RegisterPlayer(conn, player.Id);
+                    StatisticsManager.Instance.RegisterPlayer(conn, player.Id);
 
                     using (BinaryUtils.Writer writer = new BinaryUtils.Writer())
                     {
@@ -35,7 +36,7 @@ namespace NebulaNetwork.PacketProcessors.Statistics
                 }
                 else if (packet.Event == StatisticEvent.WindowClosed)
                 {
-                    StatisticsManager.instance.UnRegisterPlayer(player.Id);
+                    StatisticsManager.UnRegisterPlayer(player.Id);
                 }
             }
         }

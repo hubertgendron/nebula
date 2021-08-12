@@ -1,17 +1,23 @@
-﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
-using NebulaModel.Packets;
-using NebulaModel.Packets.Planet;
+﻿using Mirror;
 using NebulaWorld;
 
 namespace NebulaNetwork.PacketProcessors.Planet
 {
-    [RegisterPacketProcessor]
-    public class FactoryDataProcessor : PacketProcessor<FactoryData>
+    public struct FactoryData : NetworkMessage
     {
-        public override void ProcessPacket(FactoryData packet, NebulaConnection conn)
+        public int PlanetId;
+        public byte[] BinaryData;
+
+        public FactoryData(int id, byte[] data)
         {
-            if (IsHost) return;
+            PlanetId = id;
+            BinaryData = data;
+            NebulaModel.Logger.Log.Info($"Creating {GetType()} with {BinaryData.Length} bytes");
+        }
+
+        public static void ProcessPacket(FactoryData packet)
+        {
+            NebulaModel.Logger.Log.Info($"Processing {packet.GetType()} with {packet.BinaryData.Length} bytes");
 
             LocalPlayer.PendingFactories.Add(packet.PlanetId, packet.BinaryData);
 

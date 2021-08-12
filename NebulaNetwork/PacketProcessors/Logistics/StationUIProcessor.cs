@@ -1,10 +1,11 @@
 ﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Logistics;
 using NebulaWorld;
 using NebulaWorld.Logistics;
 using System.Collections.Generic;
+using NebulaModel.Networking;
 
 namespace NebulaNetwork.PacketProcessors.Logistics
 {
@@ -14,10 +15,10 @@ namespace NebulaNetwork.PacketProcessors.Logistics
         private PlayerManager playerManager;
         public StationUIProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(StationUI packet, NebulaConnection conn)
+        public override void ProcessPacket(StationUI packet, NetworkConnection conn)
         {
             if (IsHost)
             {
@@ -51,7 +52,7 @@ namespace NebulaNetwork.PacketProcessors.Logistics
                 }
                 else if (StationUIManager.UpdateCooldown == 0 || !packet.IsStorageUI)
                 {
-                    List<NebulaConnection> subscribers = StationUIManager.GetSubscribers(packet.PlanetId, packet.StationId, packet.StationGId);
+                    List<NetworkConnection> subscribers = StationUIManager.GetSubscribers(packet.PlanetId, packet.StationId, packet.StationGId);
 
                     for (int i = 0; i < subscribers.Count; i++)
                     {

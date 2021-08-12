@@ -1,16 +1,26 @@
-﻿using NebulaModel.Attributes;
+﻿using Mirror;
 using NebulaModel.Networking;
-using NebulaModel.Packets;
-using NebulaModel.Packets.Universe;
+using NebulaWorld;
+using System.Threading;
+using System;
 
 namespace NebulaNetwork.PacketProcessors.Universe
 {
-    [RegisterPacketProcessor]
-    class DysonSphereDataProcessor : PacketProcessor<DysonSphereData>
+    public struct DysonSphereData : NetworkMessage
     {
-        public override void ProcessPacket(DysonSphereData packet, NebulaConnection conn)
+        public int StarIndex;
+        public byte[] BinaryData;
+
+        public DysonSphereData(int starIndex, byte[] data)
         {
-            if (IsHost) return;
+            StarIndex = starIndex;
+            BinaryData = data;
+            NebulaModel.Logger.Log.Info($"Creating {GetType()} with {BinaryData.Length} bytes");
+        }
+
+        public static void ProcessPacket(DysonSphereData packet)
+        {
+            NebulaModel.Logger.Log.Info($"Processing {packet.GetType()} with {packet.BinaryData.Length} bytes");
 
             //Failsafe, if client does not have instantiated sphere for the star, it will create dummy one that will be replaced during import
             if (GameMain.data.dysonSpheres[packet.StarIndex] == null)

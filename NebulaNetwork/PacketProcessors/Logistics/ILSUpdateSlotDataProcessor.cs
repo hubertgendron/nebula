@@ -1,5 +1,5 @@
 ﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Logistics;
 using NebulaWorld.Logistics;
@@ -12,10 +12,10 @@ namespace NebulaNetwork.PacketProcessors.Logistics
         private PlayerManager playerManager;
         public ILSUpdateSlotDataProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(ILSUpdateSlotData packet, NebulaConnection conn)
+        public override void ProcessPacket(ILSUpdateSlotData packet, NetworkConnection conn)
         {
             if (IsHost)
             {

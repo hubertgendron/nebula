@@ -1,6 +1,9 @@
 ﻿using BepInEx;
 using HarmonyLib;
+using Mirror;
+using NebulaModel;
 using NebulaModel.Logger;
+using NebulaNetwork;
 using NebulaPatcher.Logger;
 using NebulaPatcher.MonoBehaviours;
 using System;
@@ -72,13 +75,37 @@ namespace NebulaPatcher
             }
         }
 
-        void AddNebulaBootstrapper()
+        static void AddNebulaBootstrapper()
         {
             Log.Info("Applying Nebula behaviours..");
 
-            GameObject nebulaRoot = new GameObject();
-            nebulaRoot.name = "Nebula Multiplayer Mod";
+            GameObject nebulaRoot = new GameObject
+            {
+                name = "Nebula Multiplayer Mod"
+            };
             nebulaRoot.AddComponent<NebulaBootstrapper>();
+
+            // Needed for Mirror Networking
+            var assembly = Assembly.GetAssembly(typeof(Config));
+            var type = assembly.GetType("Mirror.GeneratedNetworkCode");
+            var method = type.GetMethod("InitReadWriters");
+            method.Invoke(null, null);
+
+            assembly = Assembly.GetAssembly(typeof(NetworkManager));
+            type = assembly.GetType("Mirror.NetworkLoop");
+            AccessTools.Method(type, "RuntimeInitializeOnLoad").Invoke(null, null);
+
+            assembly = Assembly.GetAssembly(typeof(NetworkManager));
+            type = assembly.GetType("Mirror.GeneratedNetworkCode");
+            AccessTools.Method(type, "InitReadWriters").Invoke(null, null);
+
+            assembly = Assembly.GetAssembly(typeof(DistanceInterestManagement));
+            type = assembly.GetType("Mirror.GeneratedNetworkCode");
+            AccessTools.Method(type, "InitReadWriters").Invoke(null, null);
+
+            assembly = Assembly.GetAssembly(typeof(MirrorManager));
+            type = assembly.GetType("Mirror.GeneratedNetworkCode");
+            AccessTools.Method(type, "InitReadWriters").Invoke(null, null);
 
             Log.Info("Behaviours applied.");
         }

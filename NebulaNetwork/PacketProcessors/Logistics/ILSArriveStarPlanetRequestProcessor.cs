@@ -1,8 +1,10 @@
 ﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Logistics;
 using System.Collections.Generic;
+using System.Threading;
+using System;
 
 /*
  * when a client arrives at a star he needs to sync the ILS storages to give a feeling of living planet factories
@@ -17,10 +19,10 @@ namespace NebulaNetwork.PacketProcessors.Logistics
 
         public ILSArriveStarPlanetRequestProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(ILSArriveStarPlanetRequest packet, NebulaConnection conn)
+        public override void ProcessPacket(ILSArriveStarPlanetRequest packet, NetworkConnection conn)
         {
             if (IsClient) return;
 

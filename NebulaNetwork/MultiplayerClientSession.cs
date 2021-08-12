@@ -1,7 +1,7 @@
-﻿using HarmonyLib;
+﻿using BepInEx;
+using Mirror;
 using NebulaModel;
 using NebulaModel.DataStructures;
-using NebulaModel.Logger;
 using NebulaModel.Networking;
 using NebulaModel.Networking.Serialization;
 using NebulaModel.Packets.Players;
@@ -10,86 +10,55 @@ using NebulaModel.Packets.Session;
 using NebulaModel.Utils;
 using NebulaWorld;
 using System;
-using System.Net;
-using System.Net.Sockets;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
-using WebSocketSharp;
+using static NebulaModel.Networking.NebulaConnection;
 
 namespace NebulaNetwork
 {
     public class MultiplayerClientSession : MonoBehaviour, INetworkProvider
     {
         public static MultiplayerClientSession Instance { get; protected set; }
+        public static Uri LastConnectedUri { get; private set; }  = null;
 
-        private WebSocket clientSocket;
-        private EndPoint serverEndpoint;
-        private NebulaConnection serverConnection;
+        private NetworkManager NetworkManager;
+        private NetPacketProcessor PacketProcessor;
+
         private float mechaSynchonizationTimer = 0f;
 
         private float pingTimer = 0f;
         private float pingTimestamp = 0f;
         private Text pingIndicator;
         private int previousDelay = 0;
-
-        public NetPacketProcessor PacketProcessor { get; protected set; }
-        public bool IsConnected { get; protected set; }
-
         private const int MECHA_SYNCHONIZATION_INTERVAL = 5;
-        private string socketAddress;
 
         private void Awake()
         {
             Instance = this;
         }
 
-        public void ConnectToIp(IPEndPoint ip)
-        {
-            serverEndpoint = ip;
-            socketAddress = $"ws://{ip}/socket";
-            Log.Info($"Connecting to IP...");
-            ConnectInternal();
-        }
-
-        public void ConnectToUrl(string url, int port)
-        {
-            IPHostEntry host = Dns.GetHostEntry(url);
-            serverEndpoint = new IPEndPoint(host.AddressList[0], port);
-            socketAddress = $"ws://{url}:{port}/socket";
-            Log.Info($"Connecting to URL...");
-            ConnectInternal();
-        }
-
-        private void ConnectInternal()
+        public void Connect(Uri uri)
         {
             LocalPlayer.TryLoadGalacticScale2();
 
-            clientSocket = new WebSocket(socketAddress);
-            clientSocket.OnOpen += ClientSocket_OnOpen;
-            clientSocket.OnClose += ClientSocket_OnClose;
-            clientSocket.OnMessage += ClientSocket_OnMessage;
-
             PacketProcessor = new NetPacketProcessor();
-#if DEBUG
-            PacketProcessor.SimulateLatency = true;
-#endif
 
             PacketUtils.RegisterAllPacketNestedTypes(PacketProcessor);
             PacketUtils.RegisterAllPacketProcessorsInCallingAssembly(PacketProcessor, false);
 
-            clientSocket.Connect();
+            NebulaConnection.PacketProcessor = PacketProcessor;
 
-            SimulatedWorld.Initialize();
+            NetworkManager = MirrorManager.SetupMirror(typeof(ClientManager), uri);
 
-            LocalPlayer.IsMasterClient = false;
-            LocalPlayer.SetNetworkProvider(this);
+            NetworkClient.RegisterHandler<NebulaMessage>((nebulaMessage) => OnNebulaMessage(nebulaMessage));
+            NetworkClient.RegisterHandler<PacketProcessors.Planet.FactoryData>(PacketProcessors.Planet.FactoryData.ProcessPacket);
+            NetworkClient.RegisterHandler<PacketProcessors.Planet.PlanetDataResponse>(PacketProcessors.Planet.PlanetDataResponse.ProcessPacket);
+            NetworkClient.RegisterHandler<PacketProcessors.Universe.DysonSphereData>(PacketProcessors.Universe.DysonSphereData.ProcessPacket);
 
-            if (Config.Options.RememberLastIP)
-            {
-                // We've successfully connected, set connection as last ip, cutting out "ws://" and "/socket"
-                Config.Options.LastIP = socketAddress.Substring(5, socketAddress.Length - 12);
-                Config.SaveOptions();
-            }
+            NetworkManager.StartClient(uri);
+
+            LastConnectedUri = uri;
         }
 
         public void DisplayPingIndicator()
@@ -116,30 +85,63 @@ namespace NebulaNetwork
             }
         }
 
-        void Disconnect()
+        public void UpdatePingIndicator()
         {
-            IsConnected = false;
-            clientSocket?.Close((ushort)DisconnectionReason.ClientRequestedDisconnect, "Player left the game");
+            int newDelay = (int)((Time.time - pingTimestamp) * 1000);
+            if (newDelay != previousDelay)
+            {
+                pingIndicator.text = $"Ping: {newDelay}ms";
+                previousDelay = newDelay;
+            }
+        }
+
+        private void Update()
+        {
+            PacketProcessor.ProcessPacketQueue();
+
+            if (SimulatedWorld.IsGameLoaded)
+            {
+                mechaSynchonizationTimer += Time.deltaTime;
+                if (mechaSynchonizationTimer > MECHA_SYNCHONIZATION_INTERVAL)
+                {
+                    NetworkClient.connection.SendPacket(new PlayerMechaData(GameMain.mainPlayer));
+                    mechaSynchonizationTimer = 0f;
+                }
+
+                pingTimer += Time.deltaTime;
+                if (pingTimer >= 1f)
+                {
+                    NetworkClient.connection.SendPacket(new PingPacket());
+                    pingTimestamp = Time.time;
+                    pingTimer = 0f;
+                }
+            }
+        }
+
+        static void Disconnect()
+        {
+            NetworkClient.connection?.Disconnect();
         }
 
         public void DestroySession()
         {
-            Disconnect();
+            NetworkManager.StopClient();
             if (pingIndicator != null) pingIndicator.enabled = false;
             Destroy(gameObject);
+            Destroy(GameObject.Find("Mirror Networking"));
         }
 
         public void SendPacket<T>(T packet) where T : class, new()
         {
-            serverConnection?.SendPacket(packet);
+            NetworkClient.connection.SendPacket(packet);
         }
         public void SendPacketToLocalStar<T>(T packet) where T : class, new()
         {
-            serverConnection?.SendPacket(new StarBroadcastPacket(PacketProcessor.Write(packet), GameMain.data.localStar?.id ?? -1));
+            NetworkClient.connection.SendPacket(new StarBroadcastPacket(PacketProcessor.Write(packet), GameMain.data.localStar?.id ?? -1));
         }
         public void SendPacketToLocalPlanet<T>(T packet) where T : class, new()
         {
-            serverConnection?.SendPacket(new PlanetBroadcastPacket(PacketProcessor.Write(packet), GameMain.mainPlayer.planetId));
+            NetworkClient.connection.SendPacket(new PlanetBroadcastPacket(PacketProcessor.Write(packet), GameMain.mainPlayer.planetId));
         }
         public void SendPacketToPlanet<T>(T packet, int planetId) where T : class, new()
         {
@@ -154,7 +156,7 @@ namespace NebulaNetwork
             throw new NotImplementedException();
         }
 
-        public void SendPacketToStarExclude<T>(T packet, int starId, NebulaConnection exclude) where T : class, new()
+        public void SendPacketToStarExclude<T>(T packet, int starId, NetworkConnection exclude) where T : class, new()
         {
             throw new NotImplementedException();
         }
@@ -163,83 +165,48 @@ namespace NebulaNetwork
         {
             SimulatedWorld.Clear();
             Disconnect();
-            ConnectInternal();
+            Connect(LastConnectedUri);
         }
 
-        public void UpdatePingIndicator()
+    }
+
+    public class ClientManager : NetworkManager
+    {
+        public override void OnClientConnect(NetworkConnection conn)
         {
-            int newDelay = (int)((Time.time - pingTimestamp) * 1000);
-            if (newDelay != previousDelay)
+            base.OnClientConnect(conn);
+            NebulaModel.Logger.Log.Info($"Server connection established");
+
+            SimulatedWorld.Initialize();
+
+            LocalPlayer.IsMasterClient = false;
+            LocalPlayer.SetNetworkProvider(MultiplayerClientSession.Instance);
+
+            if (Config.Options.RememberLastIP)
             {
-                pingIndicator.text = $"Ping: {newDelay}ms";
-                previousDelay = newDelay;
+                // We've successfully connected, set connection URI as last connected IP
+                Config.Options.LastIP = MultiplayerClientSession.LastConnectedUri.ToString();
+                Config.SaveOptions();
             }
-        }
 
-        private void ClientSocket_OnMessage(object sender, MessageEventArgs e)
-        {
-            PacketProcessor.EnqueuePacketForProcessing(e.RawData, new NebulaConnection(clientSocket, serverEndpoint, PacketProcessor));
-        }
-
-        private void ClientSocket_OnOpen(object sender, System.EventArgs e)
-        {
-            DisableNagleAlgorithm(clientSocket);
-
-            Log.Info($"Server connection established: {clientSocket.Url}");
-            serverConnection = new NebulaConnection(clientSocket, serverEndpoint, PacketProcessor);
-            IsConnected = true;
             //TODO: Maybe some challenge-response authentication mechanism?
-            SendPacket(new HandshakeRequest(
+            conn.SendPacket(new HandshakeRequest(
                 CryptoUtils.GetPublicKey(CryptoUtils.GetOrCreateUserCert()),
                 !string.IsNullOrWhiteSpace(Config.Options.Nickname) ? Config.Options.Nickname : GameMain.data.account.userName,
                 new Float3(Config.Options.MechaColorR / 255, Config.Options.MechaColorG / 255, Config.Options.MechaColorB / 255),
                 LocalPlayer.GS2_GSSettings != null));
         }
 
-        static void DisableNagleAlgorithm(WebSocket socket)
+        public override void OnClientDisconnect(NetworkConnection conn)
         {
-            var tcpClient = AccessTools.FieldRefAccess<WebSocket, TcpClient>("_tcpClient")(socket);
-            tcpClient.NoDelay = true;
-        }
-
-        private void ClientSocket_OnClose(object sender, CloseEventArgs e)
-        {
-            IsConnected = false;
-            serverConnection = null;
-
-            UnityDispatchQueue.RunOnMainThread(() =>
+            base.OnClientDisconnect(conn);
+            ThreadingHelper.Instance.StartSyncInvoke(() =>
             {
-                // If the client is Quitting by himself, we don't have to inform him of his disconnection.
-                if (e.Code == (ushort)DisconnectionReason.ClientRequestedDisconnect)
-                    return;
-
-                if (e.Code == (ushort)DisconnectionReason.ModVersionMismatch)
-                {
-                    string[] versions = e.Reason.Split(';');
-                    InGamePopup.ShowWarning(
-                        "Mod Version Mismatch",
-                        $"Your Nebula Multiplayer Mod is not the same as the Host version.\nYou:{versions[0]} - Remote:{versions[1]}",
-                        "OK",
-                        OnDisconnectPopupCloseBeforeGameLoad);
-                    return;
-                }
-
-                if (e.Code == (ushort)DisconnectionReason.GameVersionMismatch)
-                {
-                    string[] versions = e.Reason.Split(';');
-                    InGamePopup.ShowWarning(
-                        "Game Version Mismatch",
-                        $"Your version of the game is not the same as the one used by the Host.\nYou:{versions[0]} - Remote:{versions[1]}",
-                        "OK",
-                        OnDisconnectPopupCloseBeforeGameLoad);
-                    return;
-                }
-
                 if (SimulatedWorld.IsGameLoaded)
                 {
                     InGamePopup.ShowWarning(
                         "Connection Lost",
-                        $"You have been disconnected from the server.\n{e.Reason}",
+                        $"You have been disconnected from the server.\n",
                         "Quit",
                         () => LocalPlayer.LeaveGame());
                 }
@@ -253,41 +220,18 @@ namespace NebulaNetwork
                         {
                             LocalPlayer.IsMasterClient = false;
                             SimulatedWorld.Clear();
-                            DestroySession();
+                            MultiplayerClientSession.Instance.DestroySession();
                             OnDisconnectPopupCloseBeforeGameLoad();
                         });
                 }
             });
         }
 
-        private void OnDisconnectPopupCloseBeforeGameLoad()
+        private static void OnDisconnectPopupCloseBeforeGameLoad()
         {
             GameObject overlayCanvasGo = GameObject.Find("Overlay Canvas");
-            Transform multiplayerMenu = overlayCanvasGo?.transform?.Find("Nebula - Multiplayer Menu");
-            multiplayerMenu?.gameObject?.SetActive(true);
-        }
-
-        private void Update()
-        {
-            PacketProcessor.ProcessPacketQueue();
-
-            if (SimulatedWorld.IsGameLoaded)
-            {
-                mechaSynchonizationTimer += Time.deltaTime;
-                if (mechaSynchonizationTimer > MECHA_SYNCHONIZATION_INTERVAL)
-                {
-                    SendPacket(new PlayerMechaData(GameMain.mainPlayer));
-                    mechaSynchonizationTimer = 0f;
-                }
-
-                pingTimer += Time.deltaTime;
-                if (pingTimer >= 1f)
-                {
-                    SendPacket(new PingPacket());
-                    pingTimestamp = Time.time;
-                    pingTimer = 0f;
-                }
-            }
+            Transform multiplayerMenu = overlayCanvasGo.transform.Find("Nebula - Multiplayer Menu");
+            multiplayerMenu.gameObject.SetActive(true);
         }
     }
 }

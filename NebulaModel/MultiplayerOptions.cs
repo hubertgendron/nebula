@@ -29,6 +29,37 @@ namespace NebulaModel
         [DisplayName("Remember Last IP")]
         public bool RememberLastIP { get; set; } = true;
 
+        [DisplayName("Transport Layer")]
+        public string TransportLayer { get; set; } = "ignorance";
+
+        [DisplayName("Connection Timeout (Seconds)")]
+        public int Timeout { get; set; } = 30;
+
+        [DisplayName("Max Packet Size (B/K/M/G)")]
+        public string MaxMessageSize { get; set; } = "50M";
+
+        [DisplayName("Queue Limit")]
+        public int QueueLimit {  get; set; } = 10000;
+
+#if DEBUG
+        [DisplayName("Simulate Latency")]
+        public bool SimulateLatency { get; set; } = false;
+
+        [DisplayName("Reliable Latency (Seconds)")]
+        public float ReliableLatency { get; set; } = 2f;
+
+        [DisplayName("Unreliable Loss (%)")]
+        [UIRange(0, 1)]
+        public float UnreliableLoss { get; set; } = 0.5f;
+
+        [DisplayName("Unreliable Latency (Seconds)")]
+        public float UnreliableLatency { get; set; } = 2f;
+
+        [DisplayName("Unreliable Scramble (%)")]
+        [UIRange(0, 1)]
+        public float UnreliableScramble { get; set; } = 1f;
+#endif
+
         public string LastIP { get; set; } = string.Empty;
 
         // Detail function group buttons

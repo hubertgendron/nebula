@@ -1,99 +1,66 @@
-﻿using NebulaModel.Logger;
+﻿using Mirror;
 using NebulaModel.Networking.Serialization;
 using System;
-using System.Net;
-using WebSocketSharp;
 
 namespace NebulaModel.Networking
 {
-    public class NebulaConnection
+    public static class NebulaConnection
     {
-        private readonly EndPoint peerEndpoint;
-        private readonly WebSocket peerSocket;
-        private readonly NetPacketProcessor packetProcessor;
-
-        public bool IsAlive => peerSocket?.IsAlive ?? false;
-
-        public NebulaConnection(WebSocket peerSocket, EndPoint peerEndpoint, NetPacketProcessor packetProcessor)
+        public struct NebulaMessage : NetworkMessage
         {
-            this.peerEndpoint = peerEndpoint;
-            this.peerSocket = peerSocket;
-            this.packetProcessor = packetProcessor;
+            public int Fragment;
+            public bool MoreFragments;
+            public int TotalLength;
+            public byte[] Data;
         }
+        public static NetPacketProcessor PacketProcessor { get; set; }
 
-        public void SendPacket<T>(T packet) where T : class, new()
-        {
-            if (peerSocket.ReadyState == WebSocketState.Open)
-            {
-                peerSocket.Send(packetProcessor.Write(packet));
-            }
-            else
-            {
-                Log.Warn($"Cannot send packet {packet?.GetType()} to a closed connection {peerEndpoint}");
-            }
-        }
+        private static byte[] CompletePayload;
 
-        public void SendRawPacket(byte[] rawData)
-        {
-            if (peerSocket.ReadyState == WebSocketState.Open)
-            {
-                peerSocket.Send(rawData);
-            }
-            else
-            {
-                Log.Warn($"Cannot send raw packet to a closed connection {peerSocket?.Url}");
-            }
-        }
+        private static int MaxMessageSizeInBytes => Transport.activeTransport.GetMaxPacketSize() - sizeof(int) - sizeof(bool) - sizeof(int) - 14;
 
-        public void Disconnect(DisconnectionReason reason = DisconnectionReason.Normal, string reasonString = null)
+        public static void SendPacket<T>(this NetworkConnection connection, T packet) where T : class, new()
         {
-            if (string.IsNullOrEmpty(reasonString))
+            var processedPacket = PacketProcessor.Write(packet);
+
+            Logger.Log.Debug($"Sending NebulaMessage of type {packet.GetType()} to client {connection.connectionId}");
+            for (int i = 0; i < processedPacket.Length; i += MaxMessageSizeInBytes)
             {
-                peerSocket.Close((ushort)reason);
-            }
-            else
-            {
-                if (System.Text.Encoding.UTF8.GetBytes(reasonString).Length <= 123)
+                int fragment = i / MaxMessageSizeInBytes;
+                NebulaMessage msg = new NebulaMessage()
                 {
-                    peerSocket.Close((ushort)reason, reasonString);
-                }
-                else
-                {
-                    throw new ArgumentException("Reason string cannot take up more than 123 bytes");
-                }
+                    Fragment = fragment,
+                    MoreFragments = (processedPacket.Length - i) > MaxMessageSizeInBytes,
+                    TotalLength = processedPacket.Length,
+                    Data = new byte[processedPacket.Length - i > MaxMessageSizeInBytes ? MaxMessageSizeInBytes : processedPacket.Length - i]
+                };
+                Buffer.BlockCopy(processedPacket, i, msg.Data, 0, msg.Data.Length);
+                if (connection == null) return;
+                connection.Send(msg);
             }
         }
 
-        public static bool operator ==(NebulaConnection left, NebulaConnection right)
+        public static void OnNebulaMessage(NebulaMessage nebulaMessage) => OnNebulaMessage(NetworkClient.connection, nebulaMessage);
+        public static void OnNebulaMessage(NetworkConnection networkConnection, NebulaMessage nebulaMessage)
         {
-            return Equals(left, right);
-        }
-
-        public static bool operator !=(NebulaConnection left, NebulaConnection right)
-        {
-            return !Equals(left, right);
-        }
-
-        public override bool Equals(object obj)
-        {
-            if (obj is null)
+            if (nebulaMessage.Fragment == 0 && nebulaMessage.MoreFragments == false)
             {
-                return false;
+                PacketProcessor.EnqueuePacketForProcessing(nebulaMessage.Data, networkConnection);
+                return;
             }
-            if (ReferenceEquals(this, obj))
-            {
-                return true;
-            }
-            if (obj.GetType() != GetType())
-            {
-                return false;
-            }
-            return (obj as NebulaConnection).peerEndpoint.Equals(this.peerEndpoint);
-        }
 
-        public override int GetHashCode()
-        {
-            return peerEndpoint?.GetHashCode() ?? 0;
+            if (nebulaMessage.Fragment == 0)
+            {
+                CompletePayload = new byte[nebulaMessage.TotalLength];
+            }
+
+            var index = nebulaMessage.MoreFragments ? ((nebulaMessage.Fragment) * MaxMessageSizeInBytes) : (CompletePayload.Length - nebulaMessage.Data.Length);
+            Buffer.BlockCopy(nebulaMessage.Data, 0, CompletePayload, index, nebulaMessage.Data.Length);
+
+            if (nebulaMessage.MoreFragments == false)
+            {
+                PacketProcessor.EnqueuePacketForProcessing(CompletePayload, networkConnection);
+            }
         }
     }
 }

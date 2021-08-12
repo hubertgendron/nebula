@@ -1,5 +1,5 @@
 ﻿using NebulaModel.Attributes;
-using NebulaModel.Networking;
+using Mirror;
 using NebulaModel.Packets;
 using NebulaModel.Packets.Players;
 using NebulaWorld;
@@ -13,10 +13,10 @@ namespace NebulaNetwork.PacketProcessors.Players
 
         public PlayerAnimationUpdateProcessor()
         {
-            playerManager = MultiplayerHostSession.Instance?.PlayerManager;
+            playerManager = MultiplayerHostSession.Instance != null ? MultiplayerHostSession.Instance.PlayerManager : null;
         }
 
-        public override void ProcessPacket(PlayerAnimationUpdate packet, NebulaConnection conn)
+        public override void ProcessPacket(PlayerAnimationUpdate packet, NetworkConnection conn)
         {
             bool valid = true;
 
