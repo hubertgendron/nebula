@@ -30,6 +30,11 @@ namespace NebulaModel
         [DisplayName("Remember Last IP")]
         public bool RememberLastIP { get; set; } = true;
 
+        [DisplayName("Network Savegame Compression")]
+        public bool NetworkSavegameCompression { get; set; } = true;
+
+        public bool GlobalSavegameCompression { get; set; } = false;
+
         public string LastIP { get; set; } = string.Empty;
 
         // Detail function group buttons

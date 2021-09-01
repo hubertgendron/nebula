@@ -4,6 +4,8 @@ using NebulaModel.Packets;
 using NebulaModel.Packets.Planet;
 using NebulaWorld;
 using NebulaWorld.Statistics;
+using NebulaModel;
+using NebulaWorld.Factory;
 
 namespace NebulaNetwork.PacketProcessors.Planet
 {
@@ -19,10 +21,19 @@ namespace NebulaNetwork.PacketProcessors.Planet
 
             using (BinaryUtils.Writer writer = new BinaryUtils.Writer())
             {
-                factory.Export(writer.BinaryWriter);
+                if (Config.Options.NetworkSavegameCompression)
+                {
+                    CustomExporters.CustomFactoryExport(writer.BinaryWriter, ref factory);
+                } else
+                {
+                    factory.Export(writer.BinaryWriter);
+                }
                 conn.SendPacket(new FactoryData(packet.PlanetID, writer.CloseAndGetBytes()));
             }
             conn.SendPacket(Multiplayer.Session.Statistics.GetFactoryPlanetIds());
         }
+
+        
+
     }
 }
