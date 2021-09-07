@@ -9,6 +9,7 @@ using NebulaWorld.MonoBehaviours.Local;
 using NebulaWorld.MonoBehaviours.Remote;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -20,7 +21,7 @@ namespace NebulaWorld
     /// </summary>
     public class SimulatedWorld : IDisposable
     {
-        sealed class ThreadSafe
+        private sealed class ThreadSafe
         {
             internal readonly Dictionary<ushort, RemotePlayerModel> RemotePlayersModels = new Dictionary<ushort, RemotePlayerModel>();
         }
@@ -30,9 +31,12 @@ namespace NebulaWorld
         private Text pingIndicator;
         private LocalPlayerMovement localPlayerMovement;
         private LocalPlayerAnimation localPlayerAnimation;
+        private static readonly Stopwatch watch = new Stopwatch();
 
-        public Locker GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels) =>
-            threadSafe.RemotePlayersModels.GetLocked(out remotePlayersModels);
+        public Locker GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels)
+        {
+            return threadSafe.RemotePlayersModels.GetLocked(out remotePlayersModels);
+        }
 
         public bool IsPlayerJoining { get; set; }
 
@@ -43,9 +47,9 @@ namespace NebulaWorld
 
         public void Dispose()
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
-                foreach (var model in remotePlayersModels.Values)
+                foreach (RemotePlayerModel model in remotePlayersModels.Values)
                 {
                     model.Destroy();
                 }
@@ -135,6 +139,11 @@ namespace NebulaWorld
 
         public void OnPlayerJoining()
         {
+            if (Multiplayer.Session.LocalPlayer.IsHost)
+            {
+                watch.Start();
+            }
+
             if (!IsPlayerJoining)
             {
                 IsPlayerJoining = true;
@@ -145,6 +154,13 @@ namespace NebulaWorld
 
         public void OnAllPlayersSyncCompleted()
         {
+            if (Multiplayer.Session.LocalPlayer.IsHost)
+            {
+                watch.Stop();
+                Log.Debug($"Joined in {watch.Elapsed}");
+                watch.Reset();
+            }
+
             IsPlayerJoining = false;
             InGamePopup.FadeOut();
             GameMain.isFullscreenPaused = false;
@@ -152,7 +168,7 @@ namespace NebulaWorld
 
         public void SpawnRemotePlayerModel(IPlayerData playerData)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 if (!remotePlayersModels.ContainsKey(playerData.PlayerId))
                 {
@@ -166,7 +182,7 @@ namespace NebulaWorld
 
         public void DestroyRemotePlayerModel(ushort playerId)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 if (remotePlayersModels.TryGetValue(playerId, out RemotePlayerModel player))
                 {
@@ -178,7 +194,7 @@ namespace NebulaWorld
 
         public void UpdateRemotePlayerPosition(PlayerMovement packet)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 if (remotePlayersModels.TryGetValue(packet.PlayerId, out RemotePlayerModel player))
                 {
@@ -189,7 +205,7 @@ namespace NebulaWorld
 
         public void UpdateRemotePlayerAnimation(PlayerAnimationUpdate packet)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 if (remotePlayersModels.TryGetValue(packet.PlayerId, out RemotePlayerModel player))
                 {
@@ -201,9 +217,13 @@ namespace NebulaWorld
 
         public void UpdateRemotePlayerWarpState(PlayerUseWarper packet)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
-                if (packet.PlayerId == 0) packet.PlayerId = 1; // host sends himself as PlayerId 0 but clients see him as id 1
+                if (packet.PlayerId == 0)
+                {
+                    packet.PlayerId = 1; // host sends himself as PlayerId 0 but clients see him as id 1
+                }
+
                 if (remotePlayersModels.TryGetValue(packet.PlayerId, out RemotePlayerModel player))
                 {
                     if (packet.WarpCommand)
@@ -220,14 +240,14 @@ namespace NebulaWorld
 
         public void UpdateRemotePlayerDrone(NewDroneOrderPacket packet)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 if (remotePlayersModels.TryGetValue(packet.PlayerId, out RemotePlayerModel player))
                 {
                     //Setup drone of remote player based on the drone data
                     ref MechaDrone drone = ref player.PlayerInstance.mecha.drones[packet.DroneId];
                     MechaDroneLogic droneLogic = player.PlayerInstance.mecha.droneLogic;
-                    var tmpFactory = droneLogic.factory;
+                    PlanetFactory tmpFactory = droneLogic.factory;
 
                     droneLogic.factory = GameMain.galaxy.PlanetById(packet.PlanetId).factory;
 
@@ -262,7 +282,7 @@ namespace NebulaWorld
 
         public void UpdatePlayerColor(ushort playerId, Float3 color)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 Transform transform;
                 if (playerId == Multiplayer.Session.LocalPlayer.Id)
@@ -301,7 +321,7 @@ namespace NebulaWorld
 
         public int GenerateTrashOnPlayer(TrashSystemNewTrashCreatedPacket packet)
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 if (remotePlayersModels.TryGetValue(packet.PlayerId, out RemotePlayerModel player))
                 {
@@ -332,7 +352,7 @@ namespace NebulaWorld
 
         public void OnDronesDraw()
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 foreach (KeyValuePair<ushort, RemotePlayerModel> remoteModel in remotePlayersModels)
                 {
@@ -350,17 +370,17 @@ namespace NebulaWorld
             double tmp = 1e10; //fake energy of remote player, needed to do the Update()
             double tmp2 = 1;
 
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
                 //Update drones positions based on their targets
-                var prebuildPool = GameMain.localPlanet?.factory?.prebuildPool;
+                PrebuildData[] prebuildPool = GameMain.localPlanet?.factory?.prebuildPool;
 
                 foreach (KeyValuePair<ushort, RemotePlayerModel> remoteModel in remotePlayersModels)
                 {
                     Mecha remoteMecha = remoteModel.Value.MechaInstance;
                     MechaDrone[] drones = remoteMecha.drones;
                     int droneCount = remoteMecha.droneCount;
-                    var remotePosition = remoteModel.Value.Movement.GetLastPosition().LocalPlanetPosition.ToVector3();
+                    Vector3 remotePosition = remoteModel.Value.Movement.GetLastPosition().LocalPlanetPosition.ToVector3();
 
                     for (int i = 0; i < droneCount; i++)
                     {
@@ -387,9 +407,9 @@ namespace NebulaWorld
             Text starmap_playerNameText = starmap.playerNameText;
             Transform starmap_playerTrack = starmap.playerTrack;
 
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
-                foreach (var player in remotePlayersModels)
+                foreach (KeyValuePair<ushort, RemotePlayerModel> player in remotePlayersModels)
                 {
                     RemotePlayerModel playerModel = player.Value;
 
@@ -444,13 +464,13 @@ namespace NebulaWorld
                     if (playerModel.Movement.localPlanetId > 0)
                     {
                         PlanetData planet = GameMain.galaxy.PlanetById(playerModel.Movement.localPlanetId);
-                        var rotation = planet.runtimeRotation *
+                        Quaternion rotation = planet.runtimeRotation *
                             Quaternion.LookRotation(playerModel.PlayerModelTransform.forward, playerModel.Movement.GetLastPosition().LocalPlanetPosition.ToVector3());
                         starmapTracker.rotation = rotation;
                     }
                     else
                     {
-                        var rotation = Quaternion.LookRotation(playerModel.PlayerModelTransform.forward, playerModel.PlayerTransform.localPosition);
+                        Quaternion rotation = Quaternion.LookRotation(playerModel.PlayerModelTransform.forward, playerModel.PlayerTransform.localPosition);
                         starmapTracker.rotation = rotation;
                     }
 
@@ -466,9 +486,9 @@ namespace NebulaWorld
 
         public void ClearPlayerNameTagsOnStarmap()
         {
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
-                foreach (var player in remotePlayersModels)
+                foreach (KeyValuePair<ushort, RemotePlayerModel> player in remotePlayersModels)
                 {
                     // Destroy the marker and name so they don't linger and cause problems
                     GameObject.Destroy(player.Value.StarmapNameText.gameObject);
@@ -485,9 +505,9 @@ namespace NebulaWorld
         {
             TextMesh uiSailIndicator_targetText = null;
 
-            using (GetRemotePlayersModels(out var remotePlayersModels))
+            using (GetRemotePlayersModels(out Dictionary<ushort, RemotePlayerModel> remotePlayersModels))
             {
-                foreach (var player in remotePlayersModels)
+                foreach (KeyValuePair<ushort, RemotePlayerModel> player in remotePlayersModels)
                 {
                     RemotePlayerModel playerModel = player.Value;
 
@@ -537,8 +557,8 @@ namespace NebulaWorld
                     playerNameText.transform.rotation = GameCamera.main.transform.rotation;
 
                     // Resizes the text based on distance from camera for better visual quality
-                    var distanceFromCamera = Vector3.Distance(playerNameText.transform.position, GameCamera.main.transform.position);
-                    var nameTextMesh = playerNameText.GetComponent<TextMesh>();
+                    float distanceFromCamera = Vector3.Distance(playerNameText.transform.position, GameCamera.main.transform.position);
+                    TextMesh nameTextMesh = playerNameText.GetComponent<TextMesh>();
 
                     if (distanceFromCamera > 100f)
                     {
