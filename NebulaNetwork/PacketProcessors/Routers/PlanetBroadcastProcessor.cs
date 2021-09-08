@@ -8,16 +8,19 @@ using NebulaWorld;
 namespace NebulaNetwork.PacketProcessors.Routers
 {
     [RegisterPacketProcessor]
-    class PlanetBroadcastProcessor : PacketProcessor<PlanetBroadcastPacket>
+    internal class PlanetBroadcastProcessor : PacketProcessor<PlanetBroadcastPacket>
     {
-        private IPlayerManager playerManager;
+        private readonly IPlayerManager playerManager;
         public PlanetBroadcastProcessor()
         {
             playerManager = Multiplayer.Session.Network.PlayerManager;
         }
         public override void ProcessPacket(PlanetBroadcastPacket packet, NebulaConnection conn)
         {
-            if (IsClient) return;
+            if (IsClient)
+            {
+                return;
+            }
 
             INebulaPlayer player = playerManager.GetPlayer(conn);
             if (player != null)
@@ -25,7 +28,7 @@ namespace NebulaNetwork.PacketProcessors.Routers
                 //Forward packet to other users
                 playerManager.SendRawPacketToPlanet(packet.PacketObject, packet.PlanetId, conn);
                 //Forward packet to the host
-                ((NetworkProvider)Multiplayer.Session.Network).PacketProcessor.EnqueuePacketForProcessing(packet.PacketObject, conn);
+                ((NetworkProvider)Multiplayer.Session.Network).PacketProcessor.ProcessPacket(packet.PacketObject, conn);
             }
         }
     }
